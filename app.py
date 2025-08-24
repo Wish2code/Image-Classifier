@@ -1,6 +1,8 @@
 import streamlit as st
 import plotly.express as px
 import pandas as pd
+import tempfile
+import os
 
 from collections import Counter
 from itertools import combinations
@@ -47,9 +49,73 @@ def show_images(images):
         with col:
             st.image(url)
             st.markdown(f"[Link]({url})")
+            
+            # Add delete button
+            public_id = img.get("public_id", "")
+            if public_id and st.button(f"🗑️ Delete", key=f"delete_{public_id}_{idx}"):
+                with st.spinner("Deleting image..."):
+                    try:
+                        result = cloudinary_service.delete_image(public_id)
+                        if result and result.get('result') == 'ok':
+                            st.success("Image deleted successfully!")
+                            # Clear cache and refresh
+                            st.cache_data.clear()
+                            st.rerun()
+                        else:
+                            st.error("Failed to delete image")
+                    except Exception as e:
+                        st.error(f"Error deleting image: {str(e)}")
+            
+            # Show tags for the image
+            if img.get("tags"):
+                st.caption(f"Tags: {', '.join(img['tags'])}")
+            
+            st.divider()
 
 
 def image_page():
+    # Upload section
+    st.subheader("Upload New Image")
+    uploaded_file = st.file_uploader("Choose an image file", type=['png', 'jpg', 'jpeg', 'gif', 'bmp'])
+    
+    if uploaded_file is not None:
+        # Display the uploaded image
+        st.image(uploaded_file, caption="Uploaded Image", use_container_width=True)
+        
+        # Upload and tag button
+        if st.button("Upload and Tag Image"):
+            with st.spinner("Uploading and analyzing image..."):
+                try:
+                    # Save uploaded file temporarily
+                    import tempfile
+                    import os
+                    
+                    with tempfile.NamedTemporaryFile(delete=False, suffix=f".{uploaded_file.name.split('.')[-1]}") as tmp_file:
+                        tmp_file.write(uploaded_file.getvalue())
+                        tmp_file_path = tmp_file.name
+                    
+                    # Upload to Cloudinary with auto-tagging
+                    result = cloudinary_service.upload_and_tag_image(tmp_file_path)
+                    
+                    # Clean up temporary file
+                    os.unlink(tmp_file_path)
+                    
+                    # Display results
+                    st.success("Image uploaded successfully!")
+                    st.write("**Generated Tags:**", ", ".join(result.get('tags', [])))
+                    st.write("**Image URL:**", result['secure_url'])
+                    
+                    # Clear cache to refresh the image list
+                    st.cache_data.clear()
+                    st.rerun()
+                    
+                except Exception as e:
+                    st.error(f"Error uploading image: {str(e)}")
+    
+    st.divider()
+    
+    # Existing tag selection
+    st.subheader("Browse Existing Images")
     options = sorted_tag_strings[:20]
     for item in most_common_combs:
         options.append(f"{item[0][0]}, {item[0][1]} ({item[1]})")
@@ -71,16 +137,13 @@ def image_page():
     show_images(images_with_tag)
 
 
-def stats_page(min_tags_number=20):
-    filtered_tags = {
-        k: v
-        for k, v in sorted(tag_counter.items(), key=lambda x: -x[1])
-        if v >= min_tags_number
-    }
-    labels = list(filtered_tags.keys())
-    counts = list(filtered_tags.values())
+def stats_page():
+    # Get all tags sorted by frequency
+    sorted_tag_items = sorted(tag_counter.items(), key=lambda x: -x[1])
+    labels = [item[0] for item in sorted_tag_items]
+    counts = [item[1] for item in sorted_tag_items]
 
-    st.markdown(f"#### Top {min_tags_number} Tags")
+    st.markdown(f"#### All Tags Distribution")
 
     df = pd.DataFrame(list(zip(labels, counts)), columns=["Tags", "Counts"])
     fig = px.pie(df, values="Counts", names="Tags")
@@ -88,9 +151,9 @@ def stats_page(min_tags_number=20):
     fig.update_layout(width=700, height=700)
     st.plotly_chart(fig)
 
-    st.markdown(f"#### Top 5 Tags")
-    df = pd.DataFrame(list(zip(labels[:5], counts[:5])), columns=["Tags", "Counts"])
-    fig = px.bar(df, x="Tags", y="Counts")
+    st.markdown(f"#### Top 10 Tags")
+    df_top10 = pd.DataFrame(list(zip(labels[:10], counts[:10])), columns=["Tags", "Counts"])
+    fig = px.bar(df_top10, x="Tags", y="Counts")
     fig.update_layout(width=800, height=500)
     st.plotly_chart(fig)
 

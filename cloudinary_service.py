@@ -86,6 +86,16 @@ def get_all_images_with_tags():
         next_cursor = result.get("next_cursor")
     return all_resources
 
-all_resources = get_all_images_with_tags()
-print(all_resources)
-print(len(all_resources))
+
+def delete_image(public_id):
+    """Delete an image from Cloudinary by its public_id"""
+    try:
+        result = cloudinary.uploader.destroy(public_id)
+        return result
+    except Exception as e:
+        print(f"Error deleting image: {e}")
+        return None
+
+# all_resources = get_all_images_with_tags()
+# print(all_resources)
+# print(len(all_resources))
